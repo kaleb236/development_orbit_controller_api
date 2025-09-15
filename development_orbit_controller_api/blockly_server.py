@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 
 from orbit_command_msgs.msg import BlocklyCode
-
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 suffix ="""
 from development_orbit_controller_api.orbit_api.orbit import Orbit
 
@@ -25,7 +25,13 @@ class BlocklyServer(Node):
     def __init__(self):
         super().__init__("blockly_server")
 
-        self.blockly_sub = self.create_subscription(BlocklyCode, "orbit_blockly", self.blockly_callback, 10)
+        qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,  # or RELIABLE if you prefer
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+
+        self.blockly_sub = self.create_subscription(BlocklyCode, "orbit_blockly", self.blockly_callback, qos_profile)
 
     def blockly_callback(self, blockly_msg:BlocklyCode):
         student_id = blockly_msg.student_id

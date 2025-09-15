@@ -1,7 +1,7 @@
 import math
 import rclpy
+import tf_transformations
 from rclpy.node import Node
-
 from rclpy.executors import MultiThreadedExecutor
 
 from rclpy.action import GoalResponse, CancelResponse
@@ -51,6 +51,10 @@ class OrbitControllerApi(Node):
             result = self.__move_distance(req_goal, 1)
         elif function_id == WheelGoal.Goal.BACKWARD:
             result = self.__move_distance(req_goal, -1)
+        elif function_id == WheelGoal.Goal.TURN_LEFT:
+            result = self.__move_angle(req_goal, 1)
+        elif function_id == WheelGoal.Goal.TURN_RIGHT:
+            result = self.__move_angle(req_goal, -1)
         else:
             self.get_logger().warn(f'Unknown function ID: {function_id}')
             goal_handle.abort()
@@ -113,16 +117,6 @@ class OrbitControllerApi(Node):
         target_x = self.current_odom_value.pose.pose.position.x + distance
 
         while abs(target_x - self.current_odom_value.pose.pose.position.x) > self.tolerance_xy:
-            # velocity = math.sin(
-            #     (target_x - self.current_odom_value.pose.pose.position.x) * math.pi
-            #     / abs(distance)
-            # ) * 0.3 * direction
-
-            # if abs(velocity) < 0.1:
-            #     velocity = 0.1 * direction
-
-            # # print(target_x - self.current_odom_value.pose.pose.position.x, distance, velocity)
-            # self.__publish_twist(linear_x=velocity, angular_z=0.0)
             odom_time_stamp = rclpy.time.Time.from_msg(self.current_odom_value.header.stamp)
             if (self.get_clock().now() - odom_time_stamp).nanoseconds / 1e9 > self.ordom_timeout:
                 print((self.get_clock().now() - odom_time_stamp).nanoseconds / 1e9)
@@ -133,6 +127,35 @@ class OrbitControllerApi(Node):
         self.get_logger().info('Movement distance completed.')
         self.stop_motor()
         return True
+    
+    def __move_angle(self, angle:float, direction:int) -> bool:
+        if self.current_odom_value is None:
+            self.get_logger().error("Current odometry value is not available. Cannot determine starting position.")
+            return False
+        self.get_logger().info(f"Turning robot with angle: {angle}")
+        target_yaw = math.radians(abs(angle))
+        angular_z = 0.3 * direction
+        self.__publish_twist(linear_x=0.0, angular_z=angular_z)
+        start_yaw = self.__get_yaw(self.current_odom_value.pose.pose)
+
+        while True:
+            current_pose = self.current_odom_value.pose.pose
+            current_yaw = self.__get_yaw(current_pose)
+
+            yaw_diff = (current_yaw - start_yaw)
+            if yaw_diff > math.pi:
+                yaw_diff -= 2 * math.pi
+            elif yaw_diff < -math.pi:
+                yaw_diff += 2 * math.pi
+            
+            if abs(abs(yaw_diff) - abs(target_yaw)) < 0.1:
+                self.get_logger().info("Goal reached, Stopping Movement")
+                self.stop_motor()
+                return True
+    
+    def __get_yaw(self, pose):
+        q = pose.orientation
+        return tf_transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])[2]
     
 
 
